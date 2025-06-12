@@ -1,5 +1,5 @@
 # mcpforStudyAIDevelop
-协助AI初级开发者的mcp
+协助AI开发者需求完善、模块设计、技术架构设计的mcp
 # 🚀 MCP AI开发助手 - 最终配置指南
 
 ## ✨ 优化功能总览
