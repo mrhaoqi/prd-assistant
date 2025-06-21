@@ -42,7 +42,8 @@ current_requirements = {
     "clarification_history": [],
     "architecture_designs": [],
     "last_updated": None,
-    "project_id": None
+    "project_id": None,
+    "branch_status": {}  # 分支完成状态跟踪
 }
 
 # 存储管理类
@@ -252,6 +253,49 @@ class IntelligentClarificationEngine:
 
         return gaps
 
+    @staticmethod
+    def get_current_branch(context: str, user_input: str) -> str:
+        """识别当前讨论的分支"""
+        context_lower = context.lower()
+        input_lower = user_input.lower()
+
+        if any(word in context_lower + input_lower for word in ["功能", "特性", "操作"]):
+            return "functional_design"
+        elif any(word in context_lower + input_lower for word in ["技术", "框架", "性能"]):
+            return "technical_preferences"
+        elif any(word in context_lower + input_lower for word in ["界面", "ui", "交互", "设计"]):
+            return "ui_design"
+        elif any(word in context_lower + input_lower for word in ["目标", "用户", "价值"]):
+            return "project_goals"
+        else:
+            return "general"
+
+    @staticmethod
+    def check_branch_completeness(requirements: dict) -> dict:
+        """检查各分支完整性"""
+        # 核心分支（必需）
+        core_branches = {
+            "project_goals": len(requirements.get("project_overview", [])) >= 1,
+            "functional_design": len(requirements.get("functional_requirements", [])) >= 2,
+            "technical_preferences": len(requirements.get("technical_requirements", [])) >= 1,
+            "ui_design": len(requirements.get("design_requirements", [])) >= 1
+        }
+
+        # 可选分支
+        optional_branches = {
+            "deployment": len(requirements.get("deployment_requirements", [])) >= 1
+        }
+
+        incomplete_core = [branch for branch, complete in core_branches.items() if not complete]
+        incomplete_optional = [branch for branch, complete in optional_branches.items() if not complete]
+
+        return {
+            "all_complete": len(incomplete_core) == 0,  # 只要核心分支完成即可
+            "incomplete_branches": incomplete_core,  # 只显示核心分支的缺失
+            "incomplete_optional": incomplete_optional,
+            "completion_rate": (len(core_branches) - len(incomplete_core)) / len(core_branches)
+        }
+
 # 需求澄清助手工具
 @mcp.tool()
 def requirement_clarifier(user_input: str, context: str = "") -> str:
@@ -283,82 +327,108 @@ def _save_clarification_history(user_input: str, context: str):
 def _generate_intelligent_analysis_prompt(user_input: str, context: str, project_analysis: dict) -> str:
     """生成智能化分析提示词"""
 
-    # 获取已有需求信息
+    # 获取已有需求信息和分支状态
     existing_info = _get_existing_requirements_summary()
+    current_branch = IntelligentClarificationEngine.get_current_branch(context, user_input)
+    branch_status = IntelligentClarificationEngine.check_branch_completeness(current_requirements)
 
-    return f"""# 🧠 智能需求分析任务 - 深度思考模式
+    # 检测用户是否要求AI自主设计
+    auto_design_keywords = ["常规", "标准", "普通", "一般", "你决定", "ai决定", "自己设计"]
+    is_auto_design = any(keyword in user_input.lower() for keyword in auto_design_keywords)
+
+    return f"""# 🧠 智能需求分析任务 - 分支感知模式
 
 ## 📝 用户输入分析
 **原始输入**: {user_input}
 **上下文**: {context}
+**当前分支**: {current_branch}
 **项目类型**: {project_analysis['project_type']}
 **复杂度**: {project_analysis['complexity_level']}
 **识别特征**: {', '.join(project_analysis['key_features'])}
+**用户授权自主设计**: {"是" if is_auto_design else "否"}
 
 ## 📋 已有需求信息
 {existing_info}
 
-## 🎯 智能分析指令（必须深度思考）
+## 🌿 分支完整性状态
+- **完成率**: {branch_status['completion_rate']:.0%}
+- **未完成分支**: {', '.join(branch_status['incomplete_branches']) if branch_status['incomplete_branches'] else '无'}
+- **当前分支状态**: {"讨论中" if current_branch in branch_status['incomplete_branches'] else "已完成"}
 
-### 第一步：项目核心价值深度分析
-请深度思考以下问题，不要浅层回答：
-1. **核心问题识别**：这个项目真正要解决什么痛点？为什么用户需要它？
-2. **价值主张分析**：项目的独特价值是什么？与现有解决方案的差异？
-3. **用户场景推演**：用户在什么情况下会使用这个产品？使用频率如何？
+## 🎯 分支感知智能分析指令
 
-### 第二步：架构影响因素识别
-基于项目特征，识别对架构设计影响最大的因素：
-- **数据流特征**：数据如何产生、流转、存储？
-- **交互模式**：用户如何与系统交互？实时性要求？
-- **扩展需求**：未来可能的功能扩展方向？
-- **集成需求**：需要与哪些外部系统集成？
+### 第一步：分支状态处理
+{"**用户授权自主设计当前分支**" if is_auto_design else "**用户提供具体信息**"}
 
-### 第三步：实现细节偏好挖掘
-**重要原则：永远不要假设用户接受默认方案！**
+{f'''
+**自主设计指令**：
+- 仅对当前分支({current_branch})进行合理的标准化设计
+- 设计完成后，检查其他未完成分支
+- 绝对禁止跳转到架构设计阶段
+- 必须提醒用户还有其他分支需要讨论
+''' if is_auto_design else '''
+**信息澄清指令**：
+- 深度分析用户在当前分支的具体需求
+- 识别当前分支的关键缺失信息
+- 生成针对当前分支的高质量澄清问题
+'''}
 
-必须澄清的实现偏好：
-- **API设计偏好**：REST/GraphQL/RPC？数据格式偏好？
-- **UI交互偏好**：页面跳转/单页应用/对话式？布局风格？
-- **数据处理偏好**：实时处理/批处理？存储方式偏好？
-- **认证方式偏好**：邮箱/手机/第三方登录？权限粒度？
+### 第二步：全局完整性检查
+**重要原则：始终保持全局视野，防止遗忘其他分支**
 
-### 第四步：智能问题生成与优先级排序
-从以下候选问题中，选择最有价值的2-3个：
+- 当前讨论分支：{current_branch}
+- 未完成分支：{', '.join(branch_status['incomplete_branches']) if branch_status['incomplete_branches'] else '无'}
+- 完成率：{branch_status['completion_rate']:.0%}
 
-**候选问题池**：
-- 目标用户群体的具体特征和使用场景？
-- 核心功能的具体实现方式偏好？
-- 数据量级和性能要求的具体指标？
-- UI/UX的具体偏好和交互方式？
-- 技术栈选择的具体偏好和约束？
-- 部署和维护的具体要求？
+### 第三步：智能问题生成策略
+**针对当前分支生成2-3个最重要的问题**：
 
-**选择标准**：
-1. 对架构设计影响程度 (权重40%)
-2. 用户能够明确回答 (权重30%)
-3. 避免技术假设的重要性 (权重30%)
+{f'''
+**当前分支({current_branch})的关键澄清点**：
+- 如果是功能设计：具体的功能流程、用户操作方式、数据处理逻辑
+- 如果是技术偏好：具体的技术栈选择、性能要求、集成需求
+- 如果是UI设计：具体的界面风格、交互方式、用户体验偏好
+- 如果是项目目标：具体的用户群体、核心价值、解决的问题
+''' if not is_auto_design else f'''
+**自主设计{current_branch}分支**：
+- 基于已有信息进行合理的标准化设计
+- 设计内容要具体、可实施
+- 避免过于复杂或过于简单的方案
+'''}
 
 ## 📤 输出格式要求
 
-**🔍 深度分析结果**：
-- **项目核心价值**：[深度分析的核心价值主张]
-- **关键架构因素**：[影响架构设计的3个最重要因素]
-- **已明确信息**：[用户已清楚表达的需求]
-- **关键信息缺口**：[对架构影响最大的缺失信息]
+**🔍 分支感知分析结果**：
+- **当前分支**：{current_branch}
+- **分支完成状态**：{branch_status['completion_rate']:.0%}
+- **已明确信息**：[用户在当前分支已清楚表达的需求]
+- **分支关键缺口**：[当前分支缺失的关键信息]
 
-**❓ 智能澄清问题**（按重要性排序）：
+{f'''
+**🤖 AI自主设计结果**：
+[对{current_branch}分支进行具体的标准化设计]
+
+**⚠️ 重要提醒**：
+- 当前仅完成了{current_branch}分支的设计
+- 还有以下分支需要讨论：{', '.join(branch_status['incomplete_branches'])}
+- 请继续澄清其他分支，不要急于进入架构设计
+''' if is_auto_design else f'''
+**❓ 针对{current_branch}分支的澄清问题**（按重要性排序）：
 1. [最重要的问题 - 说明为什么重要，提供具体选项]
 2. [第二重要的问题 - 说明对架构的影响，给出示例]
 3. [第三个问题 - 如果必要，解释澄清的价值]
+'''}
 
-**💡 专业洞察**：
-[基于深度分析给出的专业建议和潜在风险提醒]
+**🌿 全局进度提醒**：
+- 已完成分支：{len([b for b in ['project_goals', 'functional_design', 'technical_preferences', 'ui_design'] if b not in branch_status['incomplete_branches']])}个
+- 待完成分支：{len(branch_status['incomplete_branches'])}个
+- {"✅ 所有分支已完成，可以考虑架构设计" if branch_status['all_complete'] else f"⏳ 还需完成：{', '.join(branch_status['incomplete_branches'])}"}
 
 **🎯 下一步行动指南**：
-[具体的回答建议和思考方向]
+{f"请使用 requirement_manager 保存{current_branch}分支的设计结果，然后继续澄清其他分支" if is_auto_design else f"请回答{current_branch}分支的澄清问题，然后使用 requirement_manager 保存"}
 
 ---
-*🔄 澄清完成后，请使用 requirement_manager 工具保存明确的需求信息*
+*🔄 分支完成后，请使用 requirement_manager 工具保存，系统会自动检查其他分支*
 """
 
 def _get_existing_requirements_summary() -> str:
@@ -579,28 +649,29 @@ def _generate_requirement_update_report(category: str, storage_category: str, co
 
 def _generate_intelligent_next_steps() -> str:
     """生成智能化的下一步建议"""
+    # 使用现有的分支完整性检查
+    branch_status = IntelligentClarificationEngine.check_branch_completeness(current_requirements)
+
     suggestions = []
 
-    # 基于当前需求状态给出建议
-    if len(current_requirements['project_overview']) < 2:
-        suggestions.append("📋 建议继续澄清项目目标和用户群体")
+    # 基于分支状态给出建议
+    if "project_goals" in branch_status['incomplete_branches']:
+        suggestions.append("📋 建议澄清项目目标和用户群体")
 
-    if len(current_requirements['functional_requirements']) < 3:
-        suggestions.append("⚙️ 建议详细澄清核心功能需求")
+    if "functional_design" in branch_status['incomplete_branches']:
+        suggestions.append("⚙️ 建议详细澄清核心功能设计")
 
-    if len(current_requirements['technical_requirements']) == 0:
+    if "technical_preferences" in branch_status['incomplete_branches']:
         suggestions.append("🔧 建议澄清技术栈偏好和性能要求")
 
-    if len(current_requirements['design_requirements']) == 0:
+    if "ui_design" in branch_status['incomplete_branches']:
         suggestions.append("🎨 建议澄清UI/UX设计偏好")
 
-    # 如果需求较完整，建议进入架构设计
-    total_reqs = sum(len(current_requirements[key]) for key in [
-        "project_overview", "functional_requirements", "technical_requirements"
-    ])
-
-    if total_reqs >= 5:
-        suggestions.append("🏗️ 需求信息较完整，可以开始架构设计")
+    # 如果所有分支完成，建议架构设计
+    if branch_status['all_complete']:
+        suggestions.append("🏗️ 所有需求分支已完成，可以开始架构设计")
+    else:
+        suggestions.append(f"⏳ 完成度：{branch_status['completion_rate']:.0%}，继续完善未完成分支")
 
     return "\n".join(f"- {suggestion}" for suggestion in suggestions) if suggestions else "- 继续使用 requirement_clarifier 完善需求信息"
 
@@ -758,21 +829,31 @@ class IntelligentArchitectureDesigner:
 def architecture_designer(design_focus: str = "full_architecture") -> str:
     """智能架构设计生成器 - 基于需求分析生成定制化架构方案"""
 
-    # 检查需求完整性
+    # 检查需求完整性和AI理解深度
     completeness_check = _check_requirements_completeness()
     if not completeness_check["is_sufficient"]:
-        return f"""# ⚠️ 需求信息不足，无法生成高质量架构设计
+        branch_status = completeness_check["branch_status"]
+        understanding = completeness_check["understanding_check"]
 
-## 🔍 当前需求状态
+        return f"""# ⚠️ 需求信息不足或AI理解深度不够，无法生成高质量架构设计
+
+## 🔍 当前状态分析
 {completeness_check["status_summary"]}
 
-## 📋 建议补充的信息
-{chr(10).join(f"- {suggestion}" for suggestion in completeness_check["suggestions"])}
+## 🌿 分支完成状态
+- **已完成分支**: {len([b for b in ['project_goals', 'functional_design', 'technical_preferences', 'ui_design'] if b not in branch_status['incomplete_branches']])}个
+- **未完成分支**: {', '.join(branch_status['incomplete_branches']) if branch_status['incomplete_branches'] else '无'}
+- **完成率**: {branch_status['completion_rate']:.0%}
+
+## 🧠 AI理解深度评估
+- **理解水平**: {understanding['confidence_level']}
+- **置信度**: {understanding['confidence_score']:.0%}
+- **待解决问题**: {chr(10).join(f"  - {q}" for q in understanding['remaining_questions']) if understanding['remaining_questions'] else '无'}
 
 ## 🎯 下一步行动
-请使用 requirement_clarifier 工具补充关键需求信息后，再进行架构设计。
+{"请使用 requirement_clarifier 继续完善未完成的分支" if branch_status['incomplete_branches'] else "请使用 requirement_clarifier 深化需求理解"}
 
-**原因**: 架构设计需要基于充分的需求信息，避免做出错误的技术假设。
+**AI自检结果**: 我对当前需求的理解还不够深入，无法生成高质量的架构设计。需要更多信息来确保架构方案的准确性。
 """
 
     # 智能分析需求
@@ -795,27 +876,48 @@ def architecture_designer(design_focus: str = "full_architecture") -> str:
     return architecture_design
 
 def _check_requirements_completeness() -> dict:
-    """检查需求完整性"""
-    total_reqs = sum(len(current_requirements[key]) for key in [
-        "project_overview", "functional_requirements", "technical_requirements"
-    ])
+    """检查需求完整性 - 使用分支状态检查"""
+    branch_status = IntelligentClarificationEngine.check_branch_completeness(current_requirements)
 
-    suggestions = []
-
-    if len(current_requirements["project_overview"]) < 1:
-        suggestions.append("项目目标和用户群体信息")
-
-    if len(current_requirements["functional_requirements"]) < 2:
-        suggestions.append("核心功能需求详情")
-
-    if len(current_requirements["technical_requirements"]) < 1:
-        suggestions.append("技术偏好和性能要求")
+    # AI理解深度检查
+    understanding_check = _ai_understanding_depth_check()
 
     return {
-        "is_sufficient": total_reqs >= 3 and len(suggestions) == 0,
-        "total_requirements": total_reqs,
-        "suggestions": suggestions,
-        "status_summary": f"当前共有 {total_reqs} 条需求信息"
+        "is_sufficient": branch_status['all_complete'] and understanding_check['ready_for_architecture'],
+        "branch_status": branch_status,
+        "understanding_check": understanding_check,
+        "status_summary": f"分支完成度：{branch_status['completion_rate']:.0%}，AI理解深度：{understanding_check['confidence_level']}"
+    }
+
+def _ai_understanding_depth_check() -> dict:
+    """AI理解深度自检"""
+    total_reqs = sum(len(current_requirements[key]) for key in [
+        "project_overview", "functional_requirements", "technical_requirements", "design_requirements"
+    ])
+
+    # 简单的理解深度评估
+    confidence_indicators = {
+        "has_clear_goals": len(current_requirements["project_overview"]) >= 1,
+        "has_detailed_functions": len(current_requirements["functional_requirements"]) >= 2,
+        "has_tech_preferences": len(current_requirements["technical_requirements"]) >= 1,
+        "has_design_guidance": len(current_requirements["design_requirements"]) >= 1
+    }
+
+    confidence_score = sum(confidence_indicators.values()) / len(confidence_indicators)
+
+    remaining_questions = []
+    if not confidence_indicators["has_clear_goals"]:
+        remaining_questions.append("项目目标和用户群体不够明确")
+    if not confidence_indicators["has_detailed_functions"]:
+        remaining_questions.append("功能设计细节不足")
+    if not confidence_indicators["has_tech_preferences"]:
+        remaining_questions.append("技术偏好未明确")
+
+    return {
+        "confidence_level": "高" if confidence_score >= 0.75 else "中" if confidence_score >= 0.5 else "低",
+        "confidence_score": confidence_score,
+        "remaining_questions": remaining_questions,
+        "ready_for_architecture": confidence_score >= 0.75 and len(remaining_questions) == 0
     }
 
 def _generate_customized_architecture_design(design_focus: str, analysis: dict, tech_recs: dict, modules: dict) -> str:
