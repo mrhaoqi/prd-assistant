@@ -62,3 +62,12 @@ your_storage_directory/
 
 所有数据将保存在您指定的本地目录中。
 
+## 💬 交流群
+
+<div align="center">
+<img src="./assets/qr-code.jpg" width="200" alt="交流群">
+<br>
+交流群
+</div>
+
+
