@@ -296,6 +296,52 @@ class IntelligentClarificationEngine:
             "completion_rate": (len(core_branches) - len(incomplete_core)) / len(core_branches)
         }
 
+# 作为整个流程的起点
+@mcp.tool()
+def create_requirement_blueprint(user_request: str) -> str:
+    """
+    (AI-PM工作流起点) 接收原始需求，创建结构化的需求蓝图。
+    """
+    global current_requirements
+    
+    # ---- 在真实场景中，以下部分会由LLM根据prompt生成 ----
+    project_type = "图片社交App" if "图" in user_request or "社交" in user_request else "通用Web应用"
+    checklist = [
+        {"branch_name": "项目目标与核心价值", "storage_key": "project_overview", "status": "pending"},
+        {"branch_name": "核心功能设计", "storage_key": "functional_requirements", "status": "pending"},
+        {"branch_name": "技术栈与非功能需求", "storage_key": "technical_requirements", "status": "pending"},
+        {"branch_name": "UI/UX设计风格", "storage_key": "design_requirements", "status": "pending"}
+    ]
+    if "App" in project_type:
+        checklist.append({"branch_name": "移动端特有需求", "storage_key": "mobile_specifics", "status": "pending"})
+        if "mobile_specifics" not in current_requirements:
+            current_requirements["mobile_specifics"] = []
+    # ---- LLM生成部分结束 ----
+            
+    blueprint = {
+        "project_title": project_type,
+        "status": "CLARIFYING",
+        "checklist": checklist
+    }
+    
+    # 将生成的蓝图原子性地存入系统状态
+    current_requirements["requirement_blueprint"] = blueprint
+    storage.save_requirements()
+    
+    # 向主控AI和用户返回清晰的、可供下一步操作的报告
+    branch_names = [item['branch_name'] for item in checklist]
+    report = f"""# ✅ 项目启动成功！
+
+## 🚀 AI项目经理已介入
+
+我分析了您的需求“{user_request}”，并为您创建了项目“{project_type}”的需求蓝图。
+
+接下来，我将引导您逐一澄清以下{len(branch_names)}个关键分支：
+{chr(10).join(f'- {name}' for name in branch_names)}
+
+我们马上开始第一个分支的讨论。
+"""
+    return report
 # 需求澄清助手工具
 @mcp.tool()
 def requirement_clarifier(user_input: str, context: str = "") -> str:
@@ -549,11 +595,17 @@ class IntelligentRequirementManager:
 
 # 需求文档管理器工具
 @mcp.tool()
-def requirement_manager(clarified_info: str, category: str) -> str:
-    """智能需求文档管理器 - 智能分类、去重、验证需求信息"""
-
-    # 智能分类
-    storage_category = IntelligentRequirementManager.smart_categorize(clarified_info, category)
+def requirement_manager(clarified_info: str, category: str, force_storage_category: str = None) -> str:
+    """智能需求文档管理器 - (已优化: 支持强制分类，确保100%准确更新)"""
+    storage_category = ""
+    
+    # --- 核心优化点：强制分类覆盖 ---
+    if force_storage_category and force_storage_category in current_requirements:
+        storage_category = force_storage_category
+        logger.info(f"✅ 使用强制分类，目标存储: {storage_category}")
+    else:
+        logger.info(f"⚠️ 未使用强制分类，启动智能分类...")
+        storage_category = IntelligentRequirementManager.smart_categorize(clarified_info, category)
 
     # 检查重复
     duplicate_check = IntelligentRequirementManager.check_duplicate(
@@ -628,7 +680,7 @@ def _generate_requirement_update_report(category: str, storage_category: str, co
 
 ## 📝 更新详情
 - **原始类别**: {category}
-- **智能分类**: {storage_category}
+- **✅ AI智能归类**: {storage_category}
 - **内容**: {content}
 - **时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
@@ -824,55 +876,69 @@ class IntelligentArchitectureDesigner:
 
         return modules
 
-# 架构设计生成器工具
+# 架构设计生成器工具 
 @mcp.tool()
 def architecture_designer(design_focus: str = "full_architecture") -> str:
     """智能架构设计生成器 - 基于需求分析生成定制化架构方案"""
 
-    # 检查需求完整性和AI理解深度
     completeness_check = _check_requirements_completeness()
+    
+    # --- 优化点 ---
+    # 如果检查失败，返回一个结构化的JSON，包含三种选择，而不是简单的错误文本。
     if not completeness_check["is_sufficient"]:
         branch_status = completeness_check["branch_status"]
         understanding = completeness_check["understanding_check"]
+        
+        response_options = {
+            "status": "INTERCEPTION_REQUIRED",
+            "reason": "需求信息不足或AI理解深度不够，无法生成高质量架构设计。",
+            "details": {
+                "completion_rate": f"{branch_status['completion_rate']:.0%}",
+                "incomplete_branches": branch_status['incomplete_branches'],
+                "ai_confidence": f"{understanding['confidence_score']:.0%}",
+                "ai_remaining_questions": understanding['remaining_questions']
+            },
+            "user_choices": [
+                {
+                    "id": "continue_clarification",
+                    "title": "1. 继续澄清未完成的需求",
+                    "description": "继续通过问答方式，之情澄清流程补全未完成的需求。",
+                    "next_action_hint": {
+                        "tool_to_call": "requirement_clarifier",
+                        "prompt": f"请继续澄清未完成的分支: {', '.join(branch_status['incomplete_branches'])}"
+                    }
+                },
+                {
+                    "id": "ai_minimal_completion",
+                    "title": "2. 我（AI）来最简化完善需求",
+                    "description": "我（AI）将为未完成的分支添加最基础、最通用的需求，以满足最低可设计标准。",
+                    "next_action_hint": {
+                        "tool_to_call": "requirement_manager",
+                        "prompt": "为所有未完成的需求分支生成并保存最简化的标准化需求内容。"
+                    }
+                },
+                {
+                    "id": "ai_professional_completion",
+                    "title": "3. 由我（AI）评估并专业化完善所有需求",
+                    "description": "我（AI）将全面评估现有需求，并以高级全栈工程师的视角，主动补全所有分支的详细信息，追求最佳实践。",
+                    "next_action_hint": {
+                        "tool_to_call": "requirement_manager",
+                        "prompt": "对所有未完成的需求分支进行全面、专业的评估，并生成高质量的需求描述进行保存。"
+                    }
+                }
+            ]
+        }
+        # 将字典转换为格式化的JSON字符串返回
+        return json.dumps(response_options, ensure_ascii=False, indent=2)
 
-        return f"""# ⚠️ 需求信息不足或AI理解深度不够，无法生成高质量架构设计
-
-## 🔍 当前状态分析
-{completeness_check["status_summary"]}
-
-## 🌿 分支完成状态
-- **已完成分支**: {len([b for b in ['project_goals', 'functional_design', 'technical_preferences', 'ui_design'] if b not in branch_status['incomplete_branches']])}个
-- **未完成分支**: {', '.join(branch_status['incomplete_branches']) if branch_status['incomplete_branches'] else '无'}
-- **完成率**: {branch_status['completion_rate']:.0%}
-
-## 🧠 AI理解深度评估
-- **理解水平**: {understanding['confidence_level']}
-- **置信度**: {understanding['confidence_score']:.0%}
-- **待解决问题**: {chr(10).join(f"  - {q}" for q in understanding['remaining_questions']) if understanding['remaining_questions'] else '无'}
-
-## 🎯 下一步行动
-{"请使用 requirement_clarifier 继续完善未完成的分支" if branch_status['incomplete_branches'] else "请使用 requirement_clarifier 深化需求理解"}
-
-**AI自检结果**: 我对当前需求的理解还不够深入，无法生成高质量的架构设计。需要更多信息来确保架构方案的准确性。
-"""
-
-    # 智能分析需求
+    # --- 如果检查通过，则执行原来的成功逻辑 (此部分代码保持不变) ---
     requirements_analysis = IntelligentArchitectureDesigner.analyze_requirements_for_architecture(current_requirements)
-
-    # 生成技术栈推荐
     tech_recommendations = IntelligentArchitectureDesigner.generate_tech_stack_recommendations(requirements_analysis)
-
-    # 生成模块结构
     module_structure = IntelligentArchitectureDesigner.generate_module_structure(requirements_analysis)
-
-    # 生成定制化架构设计
     architecture_design = _generate_customized_architecture_design(
         design_focus, requirements_analysis, tech_recommendations, module_structure
     )
-
-    # 保存架构设计
     _save_architecture_design(design_focus, architecture_design)
-
     return architecture_design
 
 def _check_requirements_completeness() -> dict:
