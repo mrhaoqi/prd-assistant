@@ -296,70 +296,195 @@ class IntelligentClarificationEngine:
             "completion_rate": (len(core_branches) - len(incomplete_core)) / len(core_branches)
         }
 
-# 作为整个流程的起点
+# 新增的、作为唯一流程起点的工具
 @mcp.tool()
-def create_requirement_blueprint(user_request: str) -> str:
+def start_new_project(user_request: str) -> str:
     """
-    (AI-PM工作流起点) 接收原始需求，创建结构化的需求蓝图。
+    (最终起点) 开始一个全新的项目。
+    此工具会彻底重置所有状态，然后为新需求创建蓝图。
     """
     global current_requirements
     
-    # ---- 在真实场景中，以下部分会由LLM根据prompt生成 ----
-    project_type = "图片社交App" if "图" in user_request or "社交" in user_request else "通用Web应用"
-    checklist = [
-        {"branch_name": "项目目标与核心价值", "storage_key": "project_overview", "status": "pending"},
-        {"branch_name": "核心功能设计", "storage_key": "functional_requirements", "status": "pending"},
-        {"branch_name": "技术栈与非功能需求", "storage_key": "technical_requirements", "status": "pending"},
-        {"branch_name": "UI/UX设计风格", "storage_key": "design_requirements", "status": "pending"}
-    ]
-    if "App" in project_type:
-        checklist.append({"branch_name": "移动端特有需求", "storage_key": "mobile_specifics", "status": "pending"})
-        if "mobile_specifics" not in current_requirements:
-            current_requirements["mobile_specifics"] = []
-    # ---- LLM生成部分结束 ----
-            
-    blueprint = {
-        "project_title": project_type,
-        "status": "CLARIFYING",
-        "checklist": checklist
+    logger.info(f"🚀 接到新项目启动指令: {user_request}")
+    logger.info("🧹 开始重置系统状态...")
+
+    # 1. 彻底重置内存中的全局变量
+    current_requirements = {
+        "project_overview": [], "functional_requirements": [], "technical_requirements": [],
+        "design_requirements": [], "deployment_requirements": [], "ai_constraints": [],
+        "clarification_history": [], "architecture_designs": [], "data_model_design": [],
+        "mobile_specifics": [], "project_governance": [], "smart_contract_design": [],
+        "wallet_integration": [], "off_chain_services": [], "frontend_interaction": [],
+        "security_audit": [], "last_updated": None, "project_id": None, "branch_status": {}
     }
+    logger.info("✅ 内存状态已重置。")
+
+    # 2. 删除旧的持久化文件
+    try:
+        if storage.requirements_file.exists():
+            os.remove(storage.requirements_file)
+            logger.info(f"✅ 已删除旧的需求文件: {storage.requirements_file}")
+        if storage.history_file.exists():
+            os.remove(storage.history_file)
+            logger.info(f"✅ 已删除旧的历史文件: {storage.history_file}")
+    except Exception as e:
+        logger.error(f"❌ 清理旧文件时出错: {e}")
+        return f"# ❌ 项目启动失败\n\n在清理旧项目文件时发生错误: {e}"
+
+    logger.info("✅ 系统状态已完全重置，准备创建新蓝图...")
     
-    # 将生成的蓝图原子性地存入系统状态
-    current_requirements["requirement_blueprint"] = blueprint
-    storage.save_requirements()
-    
-    # 向主控AI和用户返回清晰的、可供下一步操作的报告
-    branch_names = [item['branch_name'] for item in checklist]
-    report = f"""# ✅ 项目启动成功！
-
-## 🚀 AI项目经理已介入
-
-我分析了您的需求“{user_request}”，并为您创建了项目“{project_type}”的需求蓝图。
-
-接下来，我将引导您逐一澄清以下{len(branch_names)}个关键分支：
-{chr(10).join(f'- {name}' for name in branch_names)}
-
-我们马上开始第一个分支的讨论。
-"""
-    return report
-# 需求澄清助手工具
+    # 3. 内部调用蓝图创建的核心逻辑
+    try:
+        # 主控AI不直接调用create_requirement_blueprint，而是由启动工具封装调用
+        report = create_requirement_blueprint(user_request)
+        return f"# 🎉 新项目已启动！\n\n{report}"
+    except Exception as e:
+        return f"# ❌ 项目启动失败\n\n在为您创建新项目蓝图时发生错误: {e}"
+# ==============================================================================
+# 1. 【全新职责】的工具：create_requirement_blueprint
+#    职责：只作为“首席架构师”提示词模板的提供者。
+# ==============================================================================
 @mcp.tool()
-def requirement_clarifier(user_input: str, context: str = "") -> str:
-    """智能需求澄清助手 - 深度分析用户需求，生成高质量澄清问题"""
+def create_requirement_blueprint(user_request: str) -> str:
+    """
+    (模板提供者) 返回用于创建需求蓝图的、专家级的提示词模板。
+    """
+    logger.info(f"为请求'{user_request}'提供了需求蓝图的提示词模板。")
+    
+    # 这个函数现在唯一的职责就是构建并返回这个强大的Prompt
+    prompt_template = f"""
+    # 角色与任务
+    你现在是主控AI，请立即代入世界顶级CTO和首席产品经理的角色。你的当前任务是分析用户的初始请求，并生成一个全面、专业的“需求蓝图”JSON对象。
 
-    # 保存澄清历史
-    _save_clarification_history(user_input, context)
+    # 用户的原始请求
+    "{user_request}"
 
-    # 智能分析项目特征
-    project_analysis = IntelligentClarificationEngine.analyze_project_characteristics(
-        user_input, context, current_requirements
-    )
+    # 你的分析与规划指令
+    1.  **识别项目类型**: 分析请求，识别其核心类型 (例如：SaaS平台, 数据分析工具, 社交App, AI机器人, 物联网, Web3 DApp等)。
+    2.  **规划核心分支**: 基于识别出的项目类型，规划出所有必须澄清的关键需求分支。你的规划必须体现专业性，主动思考并包含但不限于：
+        - `project_vision_and_value` (项目愿景与核心价值)
+        - `user_personas_and_journeys` (用户画像与核心旅程)
+        - `core_functional_modules` (核心功能模块拆解)
+        - `data_model_and_storage` (数据模型与存储方案)
+        - `technology_stack_and_non_functional` (技术栈选型与非功能性需求)
+        - `ui_ux_design_principles` (UI/UX设计原则)
+    3.  **严格的输出格式**: 你必须且只能输出一个格式完全正确的JSON对象，绝对不能包含任何诸如“好的，这是您要的...”之类的解释性文字或代码块标记。
 
-    # 生成智能化分析提示
-    analysis_prompt = _generate_intelligent_analysis_prompt(user_input, context, project_analysis)
+    # JSON输出格式定义
+    {{
+      "project_title": "string",
+      "status": "CLARIFYING",
+      "checklist": [
+        {{
+          "branch_name": "string",
+          "storage_key": "string",
+          "status": "pending"
+        }}
+      ]
+    }}
+    """
+    return prompt_template
+# ==============================================================================
+# 2. 【新增】的简单工具：save_requirement_blueprint
+#    职责：接收一个JSON字符串，验证并将其保存到系统状态中。
+# ==============================================================================
+@mcp.tool()
+def save_requirement_blueprint(blueprint_json_string: str) -> str:
+    """
+    (状态更新器) 将AI生成的蓝图JSON字符串，验证并保存到系统状态。
+    """
+    global current_requirements
+    
+    try:
+        blueprint = json.loads(blueprint_json_string)
+        
+        # 验证一下关键字段是否存在
+        if "project_title" not in blueprint or "checklist" not in blueprint:
+            raise ValueError("传入的JSON缺少关键字段 'project_title' 或 'checklist'。")
 
-    return analysis_prompt
+        # 确保所有由AI生成的storage_key都存在于全局状态中
+        for item in blueprint.get("checklist", []):
+            key = item.get("storage_key")
+            if key and key not in current_requirements:
+                current_requirements[key] = []
+        
+        # 保存到系统状态
+        current_requirements["requirement_blueprint"] = blueprint
+        storage.save_requirements()
+        
+        logger.info(f"✅ 成功保存了项目 '{blueprint.get('project_title')}' 的需求蓝图。")
+        
+        branch_names = [item['branch_name'] for item in blueprint.get("checklist", [])]
+        return f"# ✅ 项目蓝图已确认并保存！\n\n接下来，我将引导您逐一澄清以下{len(branch_names)}个关键分支。"
+        
+    except Exception as e:
+        logger.error(f"❌ 保存需求蓝图失败：{e}")
+        return f"# ❌ 保存蓝图失败\n\n原因: {e}\n请检查生成的JSON格式是否正确，然后重试。"
+# 需求澄清助手工具
+# ==============================================================================
+# 【新增/替换】 访谈专家 - 提示词提供者
+# ==============================================================================
+@mcp.tool()
+def requirement_clarifier(branch_name_to_clarify: str, project_title: str) -> str:
+    """
+    (模板提供者) 针对单个分支，返回用于生成“问题清单”的专家级提示词模板。
+    """
+    logger.info(f"为分支'{branch_name_to_clarify}'提供了问题清单的提示词模板。")
+    
+    prompt_template = f"""
+    # 角色与任务
+    你现在是主控AI，请立即代入资深用户访谈专家的角色。你的任务是针对一个具体的需求分支，设计出一系列能够彻底澄清所有细节的、结构化的问题清单，并为每个问题提供一个专业的建议方案。
 
+    # 背景
+    我们正在澄清项目“{project_title}”的“{branch_name_to_clarify}”分支。
+
+    # 你的分析与规划指令
+    1.  **拆解分支**: 将“{branch_name_to_clarify}”这个宏观概念，拆解成3-5个必须被回答的具体子问题。
+    2.  **提供专业建议**: 针对你提出的每一个子问题，都提供一个简洁、专业、符合行业最佳实践的建议答案(`ai_suggestion`)。这是为了在用户不确定时，你能主动引导。
+    3.  **严格的输出格式**: 你必须且只能输出一个格式完全正确的JSON对象，绝对不能包含任何解释性文字或代码块标记。
+
+    # JSON输出格式定义
+    {{
+      "branch_name": "{branch_name_to_clarify}",
+      "clarification_tasks": [
+        {{
+          "question_id": "string (例如: FUNC_Q1)",
+          "question_text": "string (具体的问题)",
+          "ai_suggestion": "string (AI提供的建议答案)",
+          "status": "pending",
+          "user_answer": null
+        }}
+      ]
+    }}
+    """
+    return prompt_template
+# ==============================================================================
+# 【新增】 访谈专家 - 结果保存器
+# ==============================================================================
+@mcp.tool()
+def save_clarification_tasks(branch_storage_key: str, tasks_json_string: str) -> str:
+    """
+    (状态更新器) 将AI生成的问题清单JSON，保存到指定的需求分支蓝图中。
+    """
+    global current_requirements
+
+    try:
+        tasks_data = json.loads(tasks_json_string)
+        
+        # 找到蓝图中对应的分支并更新
+        if "requirement_blueprint" in current_requirements:
+            for branch in current_requirements["requirement_blueprint"]["checklist"]:
+                if branch["storage_key"] == branch_storage_key:
+                    branch["clarification_tasks"] = tasks_data.get("clarification_tasks", [])
+                    storage.save_requirements()
+                    logger.info(f"✅ 成功为分支 '{branch_storage_key}' 保存了澄清任务清单。")
+                    return f"✅ 分支 '{tasks_data.get('branch_name')}' 的澄清任务已规划完毕。"
+
+        raise ValueError(f"在蓝图中未找到指定的storage_key: {branch_storage_key}")
+
+    except Exception as e:
+        logger.error(f"❌ 保存澄清任务清单失败：{e}")
+        return f"# ❌ 保存任务清单失败\n\n原因: {e}\n请检查生成的JSON格式是否正确。"
 def _save_clarification_history(user_input: str, context: str):
     """保存澄清历史记录"""
     current_requirements["clarification_history"].append({
@@ -877,70 +1002,81 @@ class IntelligentArchitectureDesigner:
         return modules
 
 # 架构设计生成器工具 
+# ==============================================================================
+# 【新增/替换】 架构师 - 前置检查器
+# ==============================================================================
 @mcp.tool()
-def architecture_designer(design_focus: str = "full_architecture") -> str:
-    """智能架构设计生成器 - 基于需求分析生成定制化架构方案"""
-
+def check_architecture_prerequisites() -> str:
+    """
+    (前置检查器) 检查所有需求分支是否已完成，判断是否可以开始架构设计。
+    """
     completeness_check = _check_requirements_completeness()
     
-    # --- 优化点 ---
-    # 如果检查失败，返回一个结构化的JSON，包含三种选择，而不是简单的错误文本。
     if not completeness_check["is_sufficient"]:
+        # 需求不足，返回包含选项的拦截信息
         branch_status = completeness_check["branch_status"]
         understanding = completeness_check["understanding_check"]
-        
         response_options = {
-            "status": "INTERCEPTION_REQUIRED",
+            "status": "INSUFFICIENT",
             "reason": "需求信息不足或AI理解深度不够，无法生成高质量架构设计。",
             "details": {
                 "completion_rate": f"{branch_status['completion_rate']:.0%}",
                 "incomplete_branches": branch_status['incomplete_branches'],
-                "ai_confidence": f"{understanding['confidence_score']:.0%}",
-                "ai_remaining_questions": understanding['remaining_questions']
             },
             "user_choices": [
-                {
-                    "id": "continue_clarification",
-                    "title": "1. 继续澄清未完成的需求",
-                    "description": "继续通过问答方式，之情澄清流程补全未完成的需求。",
-                    "next_action_hint": {
-                        "tool_to_call": "requirement_clarifier",
-                        "prompt": f"请继续澄清未完成的分支: {', '.join(branch_status['incomplete_branches'])}"
-                    }
-                },
-                {
-                    "id": "ai_minimal_completion",
-                    "title": "2. 我（AI）来最简化完善需求",
-                    "description": "我（AI）将为未完成的分支添加最基础、最通用的需求，以满足最低可设计标准。",
-                    "next_action_hint": {
-                        "tool_to_call": "requirement_manager",
-                        "prompt": "为所有未完成的需求分支生成并保存最简化的标准化需求内容。"
-                    }
-                },
-                {
-                    "id": "ai_professional_completion",
-                    "title": "3. 由我（AI）评估并专业化完善所有需求",
-                    "description": "我（AI）将全面评估现有需求，并以高级全栈工程师的视角，主动补全所有分支的详细信息，追求最佳实践。",
-                    "next_action_hint": {
-                        "tool_to_call": "requirement_manager",
-                        "prompt": "对所有未完成的需求分支进行全面、专业的评估，并生成高质量的需求描述进行保存。"
-                    }
-                }
+                { "id": "continue_clarification", "title": "1. 我来继续澄清未完成的需求" },
+                { "id": "ai_professional_completion", "title": "2. 由AI评估并专业化完善所有需求" }
             ]
         }
-        # 将字典转换为格式化的JSON字符串返回
         return json.dumps(response_options, ensure_ascii=False, indent=2)
+    else:
+        # 需求充足，返回准备就绪的状态
+        return json.dumps({"status": "READY", "message": "所有需求分支已澄清完毕，可以开始架构设计。"})
+# ==============================================================================
+# 【新增】 架构师 - 提示词提供者
+# ==============================================================================
+@mcp.tool()
+def get_architecture_design_prompt() -> str:
+    """
+    (模板提供者) 整合所有已澄清的需求，返回用于生成最终架构方案的专家级提示词。
+    """
+    logger.info("正在整合所有需求，生成架构设计提示词...")
+    
+    all_requirements_str = json.dumps(current_requirements, indent=2, ensure_ascii=False)
+    
+    prompt_template = f"""
+    # 角色与任务
+    你现在是主控AI，请立即代入顶级的解决方案架构师角色。你将收到一份已经由团队充分澄清过的、完整的JSON格式的需求文档。你的任务是基于这份详尽的需求，设计一份高度定制化、专业、可执行的软件架构方案。
 
-    # --- 如果检查通过，则执行原来的成功逻辑 (此部分代码保持不变) ---
-    requirements_analysis = IntelligentArchitectureDesigner.analyze_requirements_for_architecture(current_requirements)
-    tech_recommendations = IntelligentArchitectureDesigner.generate_tech_stack_recommendations(requirements_analysis)
-    module_structure = IntelligentArchitectureDesigner.generate_module_structure(requirements_analysis)
-    architecture_design = _generate_customized_architecture_design(
-        design_focus, requirements_analysis, tech_recommendations, module_structure
-    )
-    _save_architecture_design(design_focus, architecture_design)
-    return architecture_design
+    # 完整的需求文档上下文
+    {all_requirements_str}
 
+    # 你的分析与规划指令
+    你必须严格遵循以下原则，并在设计中体现出来：
+    - **低耦合、高内聚**: 模块之间责任单一，接口清晰。
+    - **模块化**: 定义清晰的业务模块和服务边界。
+    - **考虑上下文**: 你的设计必须考虑到用户在需求中提到的所有细节，比如用户规模（影响并发设计）、部署偏好（影响技术选型）等。
+    - **专业输出**: 输出一份详细的Markdown格式架构设计文档，必须包含但不限于：技术栈选型、系统架构图（用Mermaid语法）、核心模块拆分及API定义、数据表结构设计、部署方案。
+
+    # 你的输出
+    现在，请直接开始撰写这份Markdown文档。不要添加任何额外的解释性文字。
+    """
+    return prompt_template
+# ==============================================================================
+# 【新增】 架构师 - 结果保存器
+# ==============================================================================
+@mcp.tool()
+def save_architecture_design(architecture_markdown: str, design_focus: str = "full_architecture") -> str:
+    """
+    (状态更新器) 将AI生成的最终架构设计Markdown文档保存到系统状态。
+    """
+    try:
+        _save_architecture_design(design_focus, architecture_markdown) # 调用内部保存函数
+        logger.info(f"✅ 成功保存了架构设计文档。")
+        return "✅ 架构设计方案已成功保存。"
+    except Exception as e:
+        logger.error(f"❌ 保存架构设计时出错: {e}")
+        return f"❌ 保存架构设计时出错: {e}"
 def _check_requirements_completeness() -> dict:
     """检查需求完整性 - 使用分支状态检查"""
     branch_status = IntelligentClarificationEngine.check_branch_completeness(current_requirements)
