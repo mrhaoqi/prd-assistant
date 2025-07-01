@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-develop-assistant"
-version = "1.0.1"
+version = "1.2.3"
 description = "协助AI开发者进行智能化需求完善、模块设计、技术架构设计的MCP工具"
 authors = [{name = "jiemobasixiangcai", email = "39970068+jiemobasixiangcai@users.noreply.github.com"}]
 license = {file = "LICENSE"}
